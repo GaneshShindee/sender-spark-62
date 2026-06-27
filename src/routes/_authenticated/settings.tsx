@@ -49,7 +49,7 @@ function SettingsPage() {
   }, []);
 
   const connect = useMutation({
-    mutationFn: async () => startFn({ data: { origin: window.location.origin } }),
+    mutationFn: async () => startFn(),
     onSuccess: (r) => { window.location.href = r.url; },
     onError: (e: Error) => toast.error(e.message),
   });
