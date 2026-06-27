@@ -124,6 +124,19 @@ function SettingsPage() {
           <CardDescription>Emails are sent from your own Gmail account using the gmail.send scope.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {cfg.data && !cfg.data.ok && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              <p className="font-medium">OAuth not configured</p>
+              <p className="mt-1 whitespace-pre-line text-xs">{cfg.data.message}</p>
+            </div>
+          )}
+          {cfg.data?.ok && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
+              <p className="font-medium">Authorized redirect URI</p>
+              <p className="text-muted-foreground">Add this exact URL to your Google Cloud OAuth client → Authorized redirect URIs:</p>
+              <code className="mt-1 block break-all rounded bg-background px-2 py-1 font-mono">{cfg.data.redirectUri}</code>
+            </div>
+          )}
           {conn.isLoading ? (
             <Skeleton className="h-16 w-full" />
           ) : conn.data ? (
