@@ -16,7 +16,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { startGmailOAuth, getMyGmailConnection, disconnectGmail } from "@/lib/gmail.functions";
+import { startGmailOAuth, getMyGmailConnection, disconnectGmail, getGmailOAuthConfigStatus } from "@/lib/gmail.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Smart Email Sender" }] }),
@@ -29,8 +29,10 @@ function SettingsPage() {
   const startFn = useServerFn(startGmailOAuth);
   const getConn = useServerFn(getMyGmailConnection);
   const disconnectFn = useServerFn(disconnectGmail);
+  const getCfg = useServerFn(getGmailOAuthConfigStatus);
 
   const conn = useQuery({ queryKey: ["gmail-connection"], queryFn: () => getConn() });
+  const cfg = useQuery({ queryKey: ["gmail-oauth-config"], queryFn: () => getCfg() });
 
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [profile, setProfile] = useState<{ full_name: string | null } | null>(null);
