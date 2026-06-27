@@ -33,7 +33,7 @@ function SettingsPage() {
   const conn = useQuery({ queryKey: ["gmail-connection"], queryFn: () => getConn() });
 
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
-  const [profile, setProfile] = useState<{ display_name: string | null } | null>(null);
+  const [profile, setProfile] = useState<{ full_name: string | null } | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [savingName, setSavingName] = useState(false);
 
@@ -42,9 +42,9 @@ function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setUser({ id: user.id, email: user.email ?? null });
-      const { data: p } = await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+      const { data: p } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
       setProfile(p ?? null);
-      setDisplayName(p?.display_name ?? "");
+      setDisplayName(p?.full_name ?? "");
     })();
   }, []);
 
@@ -63,7 +63,7 @@ function SettingsPage() {
   async function saveProfile() {
     if (!user) return;
     setSavingName(true);
-    const { error } = await supabase.from("profiles").update({ display_name: displayName.trim() || null }).eq("id", user.id);
+    const { error } = await supabase.from("profiles").update({ full_name: displayName.trim() || null }).eq("id", user.id);
     setSavingName(false);
     if (error) toast.error(error.message); else toast.success("Profile updated");
   }
