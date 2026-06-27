@@ -1,63 +1,114 @@
 import { createServerFn } from "@tanstack/react-start";
+import { setCookie, getCookie, deleteCookie } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+
+const PKCE_COOKIE = "gmail_oauth_pkce";
+const STATE_COOKIE = "gmail_oauth_state";
 
 /** Build the Google authorization URL for the current user to connect Gmail. */
 export const startGmailOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { origin: string }) =>
-    z.object({ origin: z.string().url() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { buildAuthorizationUrl } = await import("./gmail.server");
-    const redirectUri = `${data.origin.replace(/\/$/, "")}/auth/callback/gmail`;
+  .handler(async ({ context }) => {
+    const {
+      buildAuthorizationUrl,
+      generatePkcePair,
+      pkceChallengeFromVerifier,
+      getOAuthConfig,
+    } = await import("./gmail.server");
+
+    // Validate config up front so users see a clear error instead of a Google redirect failure.
+    const cfg = getOAuthConfig();
+
+    const { verifier } = generatePkcePair();
+    const challenge = await pkceChallengeFromVerifier(verifier);
+
     // state binds CSRF to the user id; we re-verify against authenticated context on callback
     const state = `${context.userId}.${crypto.randomUUID()}`;
-    const url = buildAuthorizationUrl({ redirectUri, state });
-    return { url, state, redirectUri };
+
+    const { url, redirectUri } = buildAuthorizationUrl({
+      state,
+      codeChallenge: challenge,
+    });
+
+    // Stash verifier + state in httpOnly cookies. Cookies are scoped to our origin
+    // so the verifier never leaves the server-trust boundary.
+    const cookieOpts = {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax" as const,
+      path: "/",
+      maxAge: 60 * 10, // 10 minutes — long enough for consent screen
+    };
+    setCookie(PKCE_COOKIE, verifier, cookieOpts);
+    setCookie(STATE_COOKIE, state, cookieOpts);
+
+    return { url, redirectUri, expectedRedirectUri: cfg.redirectUri };
   });
 
 /** Complete Gmail OAuth: exchange code for tokens, store under current user. */
 export const completeGmailOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { code: string; state: string; origin: string }) =>
-    z.object({
-      code: z.string().min(1),
-      state: z.string().min(1),
-      origin: z.string().url(),
-    }).parse(d),
+  .inputValidator((d: { code: string; state: string }) =>
+    z
+      .object({
+        code: z.string().min(1),
+        state: z.string().min(1),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
-    // verify the state encodes the same user (CSRF defense)
-    const expectedPrefix = `${context.userId}.`;
-    if (!data.state.startsWith(expectedPrefix)) {
-      throw new Error("State mismatch — please try connecting again.");
+    const { exchangeCodeForTokens, fetchGoogleUserInfo, OAuthFlowError } = await import(
+      "./gmail.server"
+    );
+
+    // CSRF: state must match the cookie AND begin with the authenticated user's id.
+    const expectedState = getCookie(STATE_COOKIE);
+    const verifier = getCookie(PKCE_COOKIE);
+    deleteCookie(STATE_COOKIE, { path: "/" });
+    deleteCookie(PKCE_COOKIE, { path: "/" });
+
+    if (!expectedState || expectedState !== data.state) {
+      throw new OAuthFlowError(
+        "state_mismatch",
+        "Security check failed (state mismatch). Start the connect flow again from Settings.",
+      );
     }
-    const { exchangeCodeForTokens, fetchGoogleUserInfo } = await import("./gmail.server");
-    const redirectUri = `${data.origin.replace(/\/$/, "")}/auth/callback/gmail`;
-    const tokens = await exchangeCodeForTokens(data.code, redirectUri);
+    if (!data.state.startsWith(`${context.userId}.`)) {
+      throw new OAuthFlowError(
+        "state_user_mismatch",
+        "The authorization request belongs to a different account. Please sign in again and retry.",
+      );
+    }
+    if (!verifier) {
+      throw new OAuthFlowError(
+        "pkce_missing",
+        "Connect flow expired before completing. Click Connect Gmail again.",
+      );
+    }
+
+    const tokens = await exchangeCodeForTokens(data.code, verifier);
     if (!tokens.refresh_token) {
-      throw new Error(
-        "Google did not return a refresh token. Revoke app access at myaccount.google.com/permissions and try again.",
+      throw new OAuthFlowError(
+        "no_refresh_token",
+        "Google did not return a refresh token. Open https://myaccount.google.com/permissions, revoke access for this app, then click Connect Gmail again.",
       );
     }
     const info = await fetchGoogleUserInfo(tokens.access_token);
     const expiry = new Date(Date.now() + (tokens.expires_in - 60) * 1000).toISOString();
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("gmail_connections")
-      .upsert(
-        {
-          user_id: context.userId,
-          gmail_address: info.email,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expiry,
-          scope: tokens.scope,
-        },
-        { onConflict: "user_id" },
-      );
+    const { error } = await supabaseAdmin.from("gmail_connections").upsert(
+      {
+        user_id: context.userId,
+        gmail_address: info.email,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expiry,
+        scope: tokens.scope,
+      },
+      { onConflict: "user_id" },
+    );
     if (error) throw new Error(error.message);
     return { ok: true, email: info.email };
   });
@@ -87,6 +138,22 @@ export const disconnectGmail = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Read the configured redirect URI (for the Settings UI to show users what to whitelist). */
+export const getGmailOAuthConfigStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    try {
+      const { getOAuthConfig } = await import("./gmail.server");
+      const cfg = getOAuthConfig();
+      return { ok: true as const, redirectUri: cfg.redirectUri };
+    } catch (e) {
+      return {
+        ok: false as const,
+        message: e instanceof Error ? e.message : "OAuth not configured",
+      };
+    }
+  });
+
 /** Send an email via Gmail API using the user's stored credentials. */
 export const sendEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -97,19 +164,20 @@ export const sendEmail = createServerFn({ method: "POST" })
     bccSelf?: boolean;
     templateId?: string | null;
   }) =>
-    z.object({
-      to: z.string().email().max(320),
-      subject: z.string().min(1).max(998),
-      body: z.string().min(1).max(100_000),
-      bccSelf: z.boolean().optional(),
-      templateId: z.string().uuid().nullable().optional(),
-    }).parse(d),
+    z
+      .object({
+        to: z.string().email().max(320),
+        subject: z.string().min(1).max(998),
+        body: z.string().min(1).max(100_000),
+        bccSelf: z.boolean().optional(),
+        templateId: z.string().uuid().nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { refreshAccessToken, sendGmailMessage } = await import("./gmail.server");
 
-    // load connection with tokens via admin (RLS would hide tokens otherwise — they're sensitive)
     const { data: conn, error: connErr } = await supabaseAdmin
       .from("gmail_connections")
       .select("*")
@@ -118,7 +186,6 @@ export const sendEmail = createServerFn({ method: "POST" })
     if (connErr) throw new Error(connErr.message);
     if (!conn) throw new Error("Gmail is not connected. Connect it in Settings.");
 
-    // refresh if expired
     let accessToken = conn.access_token;
     const expiresAt = new Date(conn.expiry).getTime();
     if (Number.isNaN(expiresAt) || expiresAt < Date.now() + 30_000) {
