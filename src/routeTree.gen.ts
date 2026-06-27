@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
 import { Route as AuthenticatedSendRouteImport } from './routes/_authenticated/send'
+import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthCallbackGmailRouteImport } from './routes/auth.callback.gmail'
 
@@ -41,6 +42,11 @@ const AuthenticatedSendRoute = AuthenticatedSendRouteImport.update({
   path: '/send',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -56,6 +62,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/history': typeof AuthenticatedHistoryRoute
   '/send': typeof AuthenticatedSendRoute
   '/templates': typeof AuthenticatedTemplatesRoute
   '/auth/callback/gmail': typeof AuthCallbackGmailRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/history': typeof AuthenticatedHistoryRoute
   '/send': typeof AuthenticatedSendRoute
   '/templates': typeof AuthenticatedTemplatesRoute
   '/auth/callback/gmail': typeof AuthCallbackGmailRoute
@@ -74,6 +82,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/history': typeof AuthenticatedHistoryRoute
   '/_authenticated/send': typeof AuthenticatedSendRoute
   '/_authenticated/templates': typeof AuthenticatedTemplatesRoute
   '/auth/callback/gmail': typeof AuthCallbackGmailRoute
@@ -84,6 +93,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/history'
     | '/send'
     | '/templates'
     | '/auth/callback/gmail'
@@ -92,6 +102,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/history'
     | '/send'
     | '/templates'
     | '/auth/callback/gmail'
@@ -101,6 +112,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/dashboard'
+    | '/_authenticated/history'
     | '/_authenticated/send'
     | '/_authenticated/templates'
     | '/auth/callback/gmail'
@@ -149,6 +161,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSendRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/history': {
+      id: '/_authenticated/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof AuthenticatedHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -168,12 +187,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
   AuthenticatedSendRoute: typeof AuthenticatedSendRoute
   AuthenticatedTemplatesRoute: typeof AuthenticatedTemplatesRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
   AuthenticatedSendRoute: AuthenticatedSendRoute,
   AuthenticatedTemplatesRoute: AuthenticatedTemplatesRoute,
 }
