@@ -16,7 +16,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { startGmailOAuth, getMyGmailConnection, disconnectGmail } from "@/lib/gmail.functions";
+import { startGmailOAuth, getMyGmailConnection, disconnectGmail, getGmailOAuthConfigStatus } from "@/lib/gmail.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Smart Email Sender" }] }),
@@ -29,8 +29,10 @@ function SettingsPage() {
   const startFn = useServerFn(startGmailOAuth);
   const getConn = useServerFn(getMyGmailConnection);
   const disconnectFn = useServerFn(disconnectGmail);
+  const getCfg = useServerFn(getGmailOAuthConfigStatus);
 
   const conn = useQuery({ queryKey: ["gmail-connection"], queryFn: () => getConn() });
+  const cfg = useQuery({ queryKey: ["gmail-oauth-config"], queryFn: () => getCfg() });
 
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [profile, setProfile] = useState<{ full_name: string | null } | null>(null);
@@ -49,7 +51,7 @@ function SettingsPage() {
   }, []);
 
   const connect = useMutation({
-    mutationFn: async () => startFn({ data: { origin: window.location.origin } }),
+    mutationFn: async () => startFn(),
     onSuccess: (r) => { window.location.href = r.url; },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -122,6 +124,19 @@ function SettingsPage() {
           <CardDescription>Emails are sent from your own Gmail account using the gmail.send scope.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {cfg.data && !cfg.data.ok && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              <p className="font-medium">OAuth not configured</p>
+              <p className="mt-1 whitespace-pre-line text-xs">{cfg.data.message}</p>
+            </div>
+          )}
+          {cfg.data?.ok && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
+              <p className="font-medium">Authorized redirect URI</p>
+              <p className="text-muted-foreground">Add this exact URL to your Google Cloud OAuth client → Authorized redirect URIs:</p>
+              <code className="mt-1 block break-all rounded bg-background px-2 py-1 font-mono">{cfg.data.redirectUri}</code>
+            </div>
+          )}
           {conn.isLoading ? (
             <Skeleton className="h-16 w-full" />
           ) : conn.data ? (
